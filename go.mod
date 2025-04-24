@@ -1,4 +1,4 @@
-module benebott/bot
+module github.com/victormamede/benebott
 
 go 1.24.2
 

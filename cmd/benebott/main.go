@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"unicode"
 
-	"benebott/bot/internal/chat"
+	"github.com/victormamede/benebott/internal/chat"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
