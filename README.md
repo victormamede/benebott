@@ -65,7 +65,7 @@ Make sure your configuration file is properly set up and placed in one of the su
 
 - [Go](https://golang.org/)
 - [Viper](https://github.com/spf13/viper)
-- [Telegram Bot API](https://core.telegram.org/bots/api)
+- [Golang Telegram Bot](https://github.com/go-telegram/bot)
 
 ## 📜 License
 
