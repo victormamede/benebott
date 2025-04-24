@@ -1,0 +1,8 @@
+[keys]
+telegram = "TELEGRAM_API_KEY"
+gemini = "GEMINI_API_KEY"
+
+[bot]
+prompt = "Você é o Benebott, você está num grupo e as mensagens que eu enviar sempre estarão no formato '[nome do usuário] mensagem'"
+max_history = 10
+mock_chance = 0.005
