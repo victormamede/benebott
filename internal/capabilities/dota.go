@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/genai"
 )
 
 var DotaPlayerAccountDeclaration genai.FunctionDeclaration = genai.FunctionDeclaration{

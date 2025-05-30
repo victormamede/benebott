@@ -11,9 +11,8 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/spf13/viper"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
 
 func main() {
@@ -30,20 +29,23 @@ func main() {
 	}
 
 	// Init gemini
-	ai, err := genai.NewClient(ctx, option.WithAPIKey(viper.GetString("keys.gemini")))
+	aiClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  viper.GetString("keys.gemini"),
+		Backend: genai.BackendGeminiAPI,
+	})
 	if err != nil {
 		panic(err)
 	}
 
-	defer ai.Close()
-	model := ai.GenerativeModel("gemini-2.0-flash")
-	model.SystemInstruction = genai.NewUserContent(genai.Text(viper.GetString("bot.prompt")))
-	model.Tools = capabilities.Tools
+	config := &genai.GenerateContentConfig{
+		SystemInstruction: genai.NewContentFromText(viper.GetString("bot.prompt"), genai.RoleUser),
+		Tools:             capabilities.Tools,
+	}
 
 	chat_store := chat.CreateChatStore(viper.GetInt("bot.max_history"))
 	opts := []bot.Option{
 		bot.WithDefaultHandler(func(ctx context.Context, bot *bot.Bot, update *models.Update) {
-			chat.Handler(ctx, bot, update, model, chat_store)
+			chat.Handler(ctx, bot, update, aiClient, config, chat_store)
 		}),
 	}
 	b, err := bot.New(viper.GetString("keys.telegram"), opts...)

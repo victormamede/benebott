@@ -9,12 +9,12 @@ import (
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/spf13/viper"
 	"github.com/victormamede/benebott/internal/capabilities"
+	"google.golang.org/genai"
 )
 
-func Handler(ctx context.Context, b *bot.Bot, update *models.Update, model *genai.GenerativeModel, store *ChatStore) {
+func Handler(ctx context.Context, b *bot.Bot, update *models.Update, aiClient *genai.Client, config *genai.GenerateContentConfig, store *ChatStore) {
 	botUser, err := b.GetMe(ctx)
 	if err != nil {
 		log.Fatal("Could not get user", err)
@@ -25,14 +25,14 @@ func Handler(ctx context.Context, b *bot.Bot, update *models.Update, model *gena
 	}
 
 	if isMentionedOrReplied(botUser, update) {
-		cs := store.Get(update.Message.Chat.ID, model)
+		cs := store.Get(ctx, update.Message.Chat.ID, aiClient, config)
 
 		name := "anonymous"
 		if update.Message.From != nil {
 			name = update.Message.From.FirstName
 		}
 
-		aiCall(ctx, b, update, cs, genai.Text(fmt.Sprintf("[%s] %s", name, update.Message.Text)))
+		aiCall(ctx, b, update, cs, *genai.NewPartFromText(fmt.Sprintf("[%s] %s", name, update.Message.Text)))
 
 		return
 	}
@@ -54,13 +54,16 @@ func Handler(ctx context.Context, b *bot.Bot, update *models.Update, model *gena
 				ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
 				Text:            string(mockMessage),
 			})
+
+		return
 	}
+
 }
 
-func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, cs *genai.ChatSession, part genai.Part) {
+func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, chat *genai.Chat, part genai.Part) {
 	b.SendChatAction(ctx, &bot.SendChatActionParams{ChatID: update.Message.Chat.ID, Action: models.ChatActionTyping})
 
-	resp, err := cs.SendMessage(ctx, part)
+	resp, err := chat.SendMessage(ctx, part)
 
 	if err != nil {
 		log.Println("Gemini error", err)
@@ -80,11 +83,11 @@ func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, cs *genai.Ch
 	for _, cand := range resp.Candidates {
 		if cand.Content != nil {
 			for _, part := range cand.Content.Parts {
-				switch v := part.(type) {
-				case genai.Text:
+
+				if part.Text != "" {
 					_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 						ChatID:          update.Message.Chat.ID,
-						Text:            string(v),
+						Text:            part.Text,
 						ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
 					})
 
@@ -93,8 +96,9 @@ func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, cs *genai.Ch
 						continue
 					}
 
-				case genai.FunctionCall:
+				} else if part.FunctionCall != nil {
 					response := map[string]any{}
+					v := part.FunctionCall
 
 					switch v.Name {
 					case capabilities.MyIpDeclaration.Name:
@@ -109,17 +113,68 @@ func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, cs *genai.Ch
 						response = capabilities.UnixTimestamp(int64(v.Args["timestamp"].(float64)))
 					}
 
-					aiCall(ctx, b, update, cs, genai.FunctionResponse{
-						Name: v.Name, Response: response,
+					aiCall(ctx, b, update, chat, genai.Part{
+						FunctionResponse: &genai.FunctionResponse{
+							Name: v.Name, Response: response,
+						},
 					})
-				default:
+				} else {
 					log.Println("Unexpected error: ", err)
 					continue
+
 				}
 			}
 		}
 	}
 
+}
+
+func translateUnintelligible(ctx context.Context, b *bot.Bot, update *models.Update, aiClient *genai.Client, config *genai.GenerateContentConfig) {
+
+	history := []*genai.Content{
+		genai.NewContentFromText(viper.GetString("bot.unintelligible_prompt"), genai.RoleUser),
+		genai.NewContentFromText(update.Message.Text, genai.RoleUser),
+		genai.NewContentFromText("Great to meet you. What would you like to know?", genai.RoleModel),
+	}
+
+	resp, err := aiClient.Models.GenerateContent(
+		ctx,
+		viper.GetString("bot.model"),
+		history,
+		config,
+	)
+
+	if err != nil {
+		log.Println("Gemini error", err)
+
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          update.Message.Chat.ID,
+			Text:            "Erro: " + err.Error(),
+			ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+		})
+
+		if err != nil {
+			log.Println("Reply error", err)
+		}
+		return
+	}
+
+	for _, cand := range resp.Candidates {
+		if cand.Content != nil {
+			for _, part := range cand.Content.Parts {
+				_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+					ChatID:          update.Message.Chat.ID,
+					Text:            part.Text,
+					ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+				})
+
+				if err != nil {
+					log.Println("Reply error", err)
+					continue
+				}
+			}
+		}
+	}
 }
 
 func isMentionedOrReplied(user *models.User, update *models.Update) bool {

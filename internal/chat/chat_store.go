@@ -1,38 +1,35 @@
 package chat
 
 import (
-	"github.com/google/generative-ai-go/genai"
+	"context"
+
 	"github.com/spf13/viper"
+	"google.golang.org/genai"
 )
 
 type ChatStore struct {
 	MaxHistory int
 
-	sessions map[int64]*genai.ChatSession
+	chats map[int64]*genai.Chat
 }
 
 func CreateChatStore(maxHistory int) *ChatStore {
 	return &ChatStore{
-		sessions:   map[int64]*genai.ChatSession{},
+		chats:      map[int64]*genai.Chat{},
 		MaxHistory: maxHistory,
 	}
 }
 
-func (s *ChatStore) Get(id int64, model *genai.GenerativeModel) *genai.ChatSession {
-	session, ok := s.sessions[id]
+func (s *ChatStore) Get(ctx context.Context, id int64, client *genai.Client, config *genai.GenerateContentConfig) *genai.Chat {
+	chat, ok := s.chats[id]
 
 	if !ok {
-		session = model.StartChat()
-		s.sessions[id] = session
+		history := []*genai.Content{}
+		chat, _ := client.Chats.Create(ctx, viper.GetString("bot.model"), config, history)
+		s.chats[id] = chat
 
-		return session
+		return chat
 	}
 
-	historyLength := len(session.History)
-	maxHistory := viper.GetInt("bot.max_history")
-	if historyLength > 10 {
-		session.History = session.History[historyLength-maxHistory:]
-	}
-
-	return session
+	return chat
 }

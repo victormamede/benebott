@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/genai"
 )
 
 var MyIpDeclaration genai.FunctionDeclaration = genai.FunctionDeclaration{

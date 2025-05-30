@@ -1,6 +1,6 @@
 package capabilities
 
-import "github.com/google/generative-ai-go/genai"
+import "google.golang.org/genai"
 
 type CallResponse = map[string]any
 

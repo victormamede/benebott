@@ -3,7 +3,7 @@ package capabilities
 import (
 	"time"
 
-	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/genai"
 )
 
 var UnixTimestampDeclaration genai.FunctionDeclaration = genai.FunctionDeclaration{
