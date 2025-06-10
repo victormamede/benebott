@@ -3,6 +3,7 @@ package capabilities
 import (
 	"time"
 
+	"github.com/go-telegram/bot/models"
 	"google.golang.org/genai"
 )
 
@@ -24,4 +25,17 @@ func UnixTimestamp(timestamp int64) CallResponse {
 	result := CallResponse{"time": tm.Format(time.RFC3339)}
 
 	return result
+}
+
+var MyIdDeclaration genai.FunctionDeclaration = genai.FunctionDeclaration{
+	Name:        "my_id",
+	Description: "returns the id of the user that sent the message",
+	Parameters: &genai.Schema{
+		Type:       genai.TypeObject,
+		Properties: map[string]*genai.Schema{},
+	},
+}
+
+func MyId(update *models.Update) CallResponse {
+	return CallResponse{"id": update.Message.From.ID}
 }

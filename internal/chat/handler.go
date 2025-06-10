@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -34,6 +35,11 @@ func Handler(ctx context.Context, b *bot.Bot, update *models.Update, aiClient *g
 
 		aiCall(ctx, b, update, cs, *genai.NewPartFromText(fmt.Sprintf("[%s] %s", name, update.Message.Text)))
 
+		return
+	}
+
+	if isUnintelligiblePerson(botUser, update) {
+		translateUnintelligible(ctx, b, update, aiClient)
 		return
 	}
 
@@ -83,7 +89,6 @@ func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, chat *genai.
 	for _, cand := range resp.Candidates {
 		if cand.Content != nil {
 			for _, part := range cand.Content.Parts {
-
 				if part.Text != "" {
 					_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 						ChatID:          update.Message.Chat.ID,
@@ -111,6 +116,8 @@ func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, chat *genai.
 						response = capabilities.DotaHeroes()
 					case capabilities.UnixTimestampDeclaration.Name:
 						response = capabilities.UnixTimestamp(int64(v.Args["timestamp"].(float64)))
+					case capabilities.MyIdDeclaration.Name:
+						response = capabilities.MyId(update)
 					}
 
 					aiCall(ctx, b, update, chat, genai.Part{
@@ -129,12 +136,30 @@ func aiCall(ctx context.Context, b *bot.Bot, update *models.Update, chat *genai.
 
 }
 
-func translateUnintelligible(ctx context.Context, b *bot.Bot, update *models.Update, aiClient *genai.Client, config *genai.GenerateContentConfig) {
+type IntelligibleResponse struct {
+	IsCorrect        bool   `json:"isCorrect"`
+	CorrectedVersion string `json:"correctedVersion"`
+}
+
+func translateUnintelligible(ctx context.Context, b *bot.Bot, update *models.Update, aiClient *genai.Client) {
+	config := &genai.GenerateContentConfig{
+		ResponseMIMEType: "application/json",
+		ResponseSchema: &genai.Schema{
+			Type: genai.TypeObject,
+			Properties: map[string]*genai.Schema{
+				"isCorrect": {Type: genai.TypeBoolean, Description: "Wether the message is grammatically correct. (true means correct)"},
+				"correctedVersion": {
+					Description: "The correct form of the message",
+					Type:        genai.TypeString,
+				},
+			},
+			Required: []string{"isCorrect"},
+		},
+	}
 
 	history := []*genai.Content{
 		genai.NewContentFromText(viper.GetString("bot.unintelligible_prompt"), genai.RoleUser),
-		genai.NewContentFromText(update.Message.Text, genai.RoleUser),
-		genai.NewContentFromText("Great to meet you. What would you like to know?", genai.RoleModel),
+		genai.NewContentFromText(fmt.Sprintf("Mensagem: \"%s\"", update.Message.Text), genai.RoleUser),
 	}
 
 	resp, err := aiClient.Models.GenerateContent(
@@ -162,9 +187,27 @@ func translateUnintelligible(ctx context.Context, b *bot.Bot, update *models.Upd
 	for _, cand := range resp.Candidates {
 		if cand.Content != nil {
 			for _, part := range cand.Content.Parts {
+
+				response := IntelligibleResponse{}
+				err = json.Unmarshal([]byte(part.Text), &response)
+				if err != nil {
+
+					log.Println("Marshall error:", err)
+					b.SendMessage(ctx, &bot.SendMessageParams{
+						ChatID:          update.Message.Chat.ID,
+						Text:            "Erro: " + err.Error(),
+						ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
+					})
+					return
+				}
+
+				if response.IsCorrect {
+					return
+				}
+
 				_, err := b.SendMessage(ctx, &bot.SendMessageParams{
 					ChatID:          update.Message.Chat.ID,
-					Text:            part.Text,
+					Text:            fmt.Sprintf("Tradução: \"%s\"", response.CorrectedVersion),
 					ReplyParameters: &models.ReplyParameters{MessageID: update.Message.ID},
 				})
 
@@ -191,6 +234,18 @@ func isMentionedOrReplied(user *models.User, update *models.Update) bool {
 			if mentionText == "@"+user.Username {
 				return true
 			}
+		}
+	}
+
+	return false
+}
+
+func isUnintelligiblePerson(user *models.User, update *models.Update) bool {
+	unintelligibleIds := viper.GetIntSlice("bot.unintelligible_ids")
+
+	for _, id := range unintelligibleIds {
+		if int64(id) == update.Message.From.ID {
+			return true
 		}
 	}
 

@@ -12,6 +12,7 @@ var Tools = []*genai.Tool{
 			&DotaPlayerMatchesDeclaration,
 			&DotaHeroesDeclaration,
 			&UnixTimestampDeclaration,
+			&MyIdDeclaration,
 		},
 	},
 }
